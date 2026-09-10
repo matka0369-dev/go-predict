@@ -1,0 +1,28 @@
+services:
+  - type: web
+    name: predictsim-prediction-service
+    runtime: go
+    plan: free
+    region: singapore
+    buildCommand: go build -o app ./cmd/server
+    startCommand: ./app
+    healthCheckPath: /healthz
+    envVars:
+      - key: GO_VERSION
+        value: "1.26.2"
+      - key: NODE_ENV
+        value: production
+      - key: SESSION_COOKIE_NAME
+        value: predictsim_sid
+      # Empty for the same reason as core-service: the UIs reach this service
+      # same-origin through /api/prediction/* rewrites on Vercel.
+      - key: CORS_ALLOWED_ORIGINS
+        value: ""
+      - key: ROUND_GENERATOR_INTERVAL_SECONDS
+        value: "300"
+      - key: ROUND_GENERATOR_DAYS_AHEAD
+        value: "3"
+      # Set in the Render dashboard. Must be the same database core-service
+      # migrates (same Supabase project).
+      - key: DATABASE_URL
+        sync: false
