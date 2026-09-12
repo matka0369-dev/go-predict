@@ -65,7 +65,7 @@ func ActiveGamesForPlayer(ctx context.Context, pool *pgxpool.Pool, agentID strin
 		JOIN rounds r ON r.game_id = g.id
 		                 AND r.date = (now() AT TIME ZONE g.timezone)::date
 		WHERE g.status = 'ACTIVE'
-		ORDER BY g.name
+		ORDER BY r.opens_at
 	`, adminID)
 	if err != nil {
 		return nil, err
