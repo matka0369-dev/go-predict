@@ -13,16 +13,20 @@ import (
 )
 
 type activeGameResponse struct {
-	GameID      string           `json:"gameId"`
-	Name        string           `json:"name"`
-	Description *string          `json:"description"`
-	MinStake    int              `json:"minStake"`
-	MaxStake    int              `json:"maxStake"`
-	RoundID     string           `json:"roundId"`
-	Date        string           `json:"date"`
-	OpensAt     time.Time        `json:"opensAt"`
-	ClosesAt    time.Time        `json:"closesAt"`
+	GameID      string            `json:"gameId"`
+	Name        string            `json:"name"`
+	Description *string           `json:"description"`
+	MinStake    int               `json:"minStake"`
+	MaxStake    int               `json:"maxStake"`
+	RoundID     string            `json:"roundId"`
+	Date        string            `json:"date"`
+	OpensAt     time.Time         `json:"opensAt"`
+	ClosesAt    time.Time         `json:"closesAt"`
 	Cutoffs     map[string]string `json:"cutoffs"`
+	// Today's result — nil until Platform Admin enters it after the round
+	// closes. The jodi isn't sent; the UI derives it from these two.
+	OpenPana  *string `json:"openPana"`
+	ClosePana *string `json:"closePana"`
 }
 
 // GetActiveGames serves the Predict UI's game list: every game the
@@ -70,6 +74,8 @@ func GetActiveGames(pool *pgxpool.Pool) http.HandlerFunc {
 				OpensAt:     g.OpensAt,
 				ClosesAt:    g.ClosesAt,
 				Cutoffs:     cutoffs,
+				OpenPana:    g.OpenPana,
+				ClosePana:   g.ClosePana,
 			})
 		}
 

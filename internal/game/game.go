@@ -40,6 +40,11 @@ type ActiveGame struct {
 	OpensAt     time.Time
 	ClosesAt    time.Time
 	RoundStatus string
+	// Today's result, filled in by Platform Admin after the round closes —
+	// nil until then. The Predict UI derives the jodi (digit-sum-mod-10 of
+	// each pana) client-side rather than this service duplicating that math.
+	OpenPana  *string
+	ClosePana *string
 }
 
 // ActiveGamesForPlayer lists every game the Player's Admin has enabled that
@@ -59,7 +64,8 @@ func ActiveGamesForPlayer(ctx context.Context, pool *pgxpool.Pool, agentID strin
 
 	rows, err := pool.Query(ctx, `
 		SELECT g.id, g.name, g.description, g.min_stake, g.max_stake,
-		       r.id, r.date, r.opens_at, r.closes_at, r.status
+		       r.id, r.date, r.opens_at, r.closes_at, r.status,
+		       r.open_pana, r.close_pana
 		FROM games g
 		JOIN game_enablements ge ON ge.game_id = g.id AND ge.admin_id = $1 AND ge.enabled = true
 		JOIN rounds r ON r.game_id = g.id
@@ -76,7 +82,8 @@ func ActiveGamesForPlayer(ctx context.Context, pool *pgxpool.Pool, agentID strin
 	for rows.Next() {
 		var g ActiveGame
 		if err := rows.Scan(&g.GameID, &g.Name, &g.Description, &g.MinStake, &g.MaxStake,
-			&g.RoundID, &g.Date, &g.OpensAt, &g.ClosesAt, &g.RoundStatus); err != nil {
+			&g.RoundID, &g.Date, &g.OpensAt, &g.ClosesAt, &g.RoundStatus,
+			&g.OpenPana, &g.ClosePana); err != nil {
 			return nil, err
 		}
 		out = append(out, g)
