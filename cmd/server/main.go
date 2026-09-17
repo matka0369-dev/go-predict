@@ -80,6 +80,7 @@ func main() {
 	r.Group(func(r chi.Router) {
 		r.Use(appauth.Middleware(pool))
 		r.Get("/games/active", handlers.GetActiveGames(pool))
+		r.Get("/games/{gameId}/history", handlers.GetGameHistory(pool))
 		r.Post("/predictions", handlers.PostPrediction(pool))
 	})
 

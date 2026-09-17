@@ -3,8 +3,10 @@ package handlers
 import (
 	"encoding/json"
 	"net/http"
+	"strconv"
 	"time"
 
+	"github.com/go-chi/chi/v5"
 	"github.com/jackc/pgx/v5/pgxpool"
 
 	"predictsim/prediction-service/internal/auth"
@@ -76,6 +78,63 @@ func GetActiveGames(pool *pgxpool.Pool) http.HandlerFunc {
 				Cutoffs:     cutoffs,
 				OpenPana:    g.OpenPana,
 				ClosePana:   g.ClosePana,
+			})
+		}
+
+		writeJSON(w, http.StatusOK, out)
+	}
+}
+
+type historyRoundResponse struct {
+	Date string `json:"date"`
+	// Whichever side has published — either can be nil, same as an
+	// activeGameResponse's today. The jodi isn't sent here either; the UI
+	// derives it the same way it already does for today's card.
+	OpenPana  *string `json:"openPana"`
+	ClosePana *string `json:"closePana"`
+}
+
+const defaultHistoryLimit = 60
+const maxHistoryLimit = 180
+
+// GetGameHistory serves the Predict page's "chart" button — up to
+// maxHistoryLimit past days' results for one game, most recent first. A
+// Player reaches this only from a game already on their own Predict page,
+// so unlike GetActiveGames this doesn't re-check that game against their
+// Agent's enablement — see game.History's doc for why that's deliberate.
+func GetGameHistory(pool *pgxpool.Pool) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		user := auth.FromContext(r.Context())
+		if user.AccountType != "PLAYER" {
+			http.Error(w, "Only Players have game history to view", http.StatusForbidden)
+			return
+		}
+
+		gameID := chi.URLParam(r, "gameId")
+		if gameID == "" {
+			http.Error(w, "gameId is required", http.StatusBadRequest)
+			return
+		}
+
+		limit := defaultHistoryLimit
+		if v := r.URL.Query().Get("limit"); v != "" {
+			if n, err := strconv.Atoi(v); err == nil && n > 0 && n <= maxHistoryLimit {
+				limit = n
+			}
+		}
+
+		rounds, err := game.History(r.Context(), pool, gameID, limit)
+		if err != nil {
+			http.Error(w, "Failed to load history", http.StatusInternalServerError)
+			return
+		}
+
+		out := make([]historyRoundResponse, 0, len(rounds))
+		for _, rd := range rounds {
+			out = append(out, historyRoundResponse{
+				Date:      rd.Date.Format("2006-01-02"),
+				OpenPana:  rd.OpenPana,
+				ClosePana: rd.ClosePana,
 			})
 		}
 

@@ -91,6 +91,42 @@ func ActiveGamesForPlayer(ctx context.Context, pool *pgxpool.Pool, agentID strin
 	return out, rows.Err()
 }
 
+type HistoryRound struct {
+	Date      time.Time
+	OpenPana  *string
+	ClosePana *string
+}
+
+// History returns a game's past rounds, most recent first — the Predict
+// page's "chart" button: the traditional panel of which numbers came up on
+// which past days. Not scoped by agent/enablement, unlike ActiveGamesForPlayer:
+// a result that has already published is not sensitive information, and a
+// Player only ever reaches this from a game they can already see on their
+// own Predict page.
+func History(ctx context.Context, pool *pgxpool.Pool, gameID string, limit int) ([]HistoryRound, error) {
+	rows, err := pool.Query(ctx, `
+		SELECT date, open_pana, close_pana
+		FROM rounds
+		WHERE game_id = $1
+		ORDER BY date DESC
+		LIMIT $2
+	`, gameID, limit)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	var out []HistoryRound
+	for rows.Next() {
+		var h HistoryRound
+		if err := rows.Scan(&h.Date, &h.OpenPana, &h.ClosePana); err != nil {
+			return nil, err
+		}
+		out = append(out, h)
+	}
+	return out, rows.Err()
+}
+
 type RoundLookup struct {
 	RoundID     string
 	OpensAt     time.Time
