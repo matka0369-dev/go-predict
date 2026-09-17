@@ -64,6 +64,28 @@ func cookieNameFor(r *http.Request) string {
 	return baseCookieName()
 }
 
+// sessionCookieValue finds the raw session token on a request. It tries the
+// exact namespaced name first (the common case: every fetch() call from
+// api.ts sends X-Portal), then falls back to the first cookie whose name
+// carries the base cookie name as a prefix — covering a plain `<img src>`
+// request, which the browser sends same-origin cookies on but which can
+// never carry a custom header, so cookieNameFor(r) would otherwise look for
+// a bare "predictsim_sid" cookie that's never actually set (only the
+// portal-namespaced one is, since login always sees X-Portal). Safe because
+// this service's origin never holds more than one session cookie at a time.
+func sessionCookieValue(r *http.Request) (string, bool) {
+	if cookie, err := r.Cookie(cookieNameFor(r)); err == nil && cookie.Value != "" {
+		return cookie.Value, true
+	}
+	prefix := baseCookieName()
+	for _, c := range r.Cookies() {
+		if strings.HasPrefix(c.Name, prefix) && c.Value != "" {
+			return c.Value, true
+		}
+	}
+	return "", false
+}
+
 func hashToken(raw string) string {
 	sum := sha256.Sum256([]byte(raw))
 	return hex.EncodeToString(sum[:])
@@ -77,16 +99,16 @@ func hashToken(raw string) string {
 func Middleware(pool *pgxpool.Pool) func(http.Handler) http.Handler {
 	return func(next http.Handler) http.Handler {
 		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-			cookie, err := r.Cookie(cookieNameFor(r))
-			if err != nil || cookie.Value == "" {
+			rawToken, ok := sessionCookieValue(r)
+			if !ok {
 				http.Error(w, "Not authenticated", http.StatusUnauthorized)
 				return
 			}
 
-			tokenHash := hashToken(cookie.Value)
+			tokenHash := hashToken(rawToken)
 
 			var u User
-			err = pool.QueryRow(r.Context(), `
+			err := pool.QueryRow(r.Context(), `
 				SELECT u.id, u.email, u.username, u.account_type, u.agent_id, u.is_active
 				FROM sessions s
 				JOIN users u ON u.id = s.user_id

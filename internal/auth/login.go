@@ -185,12 +185,11 @@ func Login(pool *pgxpool.Pool) http.HandlerFunc {
 // cookie names one still live), then clear the cookie regardless.
 func Logout(pool *pgxpool.Pool) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
-		cookie, err := r.Cookie(cookieNameFor(r))
-		if err == nil && cookie.Value != "" {
+		if rawToken, ok := sessionCookieValue(r); ok {
 			_, _ = pool.Exec(r.Context(), `
 				UPDATE sessions SET revoked_at = now()
 				WHERE token_hash = $1 AND revoked_at IS NULL
-			`, hashToken(cookie.Value))
+			`, hashToken(rawToken))
 		}
 
 		http.SetCookie(w, &http.Cookie{
@@ -242,8 +241,8 @@ func ListSessions(pool *pgxpool.Pool) http.HandlerFunc {
 		u := FromContext(r.Context())
 
 		var currentHash string
-		if cookie, err := r.Cookie(cookieNameFor(r)); err == nil && cookie.Value != "" {
-			currentHash = hashToken(cookie.Value)
+		if rawToken, ok := sessionCookieValue(r); ok {
+			currentHash = hashToken(rawToken)
 		}
 
 		rows, err := pool.Query(r.Context(), `
@@ -324,8 +323,8 @@ func RevokeOtherSessions(pool *pgxpool.Pool) http.HandlerFunc {
 		u := FromContext(r.Context())
 
 		var exceptHash string
-		if cookie, err := r.Cookie(cookieNameFor(r)); err == nil && cookie.Value != "" {
-			exceptHash = hashToken(cookie.Value)
+		if rawToken, ok := sessionCookieValue(r); ok {
+			exceptHash = hashToken(rawToken)
 		}
 
 		_, err := pool.Exec(r.Context(), `
