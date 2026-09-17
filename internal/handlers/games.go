@@ -94,7 +94,7 @@ type historyRoundResponse struct {
 	ClosePana *string `json:"closePana"`
 }
 
-const defaultHistoryLimit = 60
+const defaultHistoryLimit = 45
 const maxHistoryLimit = 180
 
 // GetGameHistory serves the Predict page's "chart" button — up to
