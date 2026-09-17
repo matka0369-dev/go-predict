@@ -1,10 +1,16 @@
 // Package auth validates the same httpOnly session cookie core-service
-// issues, directly against the shared sessions/users tables — this service
-// has no separate login of its own and never will; a session is only ever
-// created by core-service's /auth/login. Mirrors
+// issues, directly against the shared sessions/users tables. Mirrors
 // core-service/src/auth/guards/session-auth.guard.ts and
 // session-token.util.ts exactly (same cookie name, same SHA-256 hash) so a
 // cookie minted by one service is valid on the other.
+//
+// 2026-09-17: this package also issues its own sessions now (login.go) —
+// the Player portal no longer talks to core-service's HTTP API at all (only
+// Go and Node's other three UIs do), so Player's login has to originate
+// here. Node's core-service is still the *only* issuer for the other three
+// portals, and still owns every other users/sessions write this service
+// doesn't explicitly take on below. This reverses an earlier "never will"
+// version of this comment — see ARCHITECTURE.md.
 package auth
 
 import (

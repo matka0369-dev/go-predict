@@ -77,11 +77,34 @@ func main() {
 		json.NewEncoder(w).Encode(map[string]string{"status": "ok"})
 	})
 
+	// Unauthenticated — this is the one route that has to be, since it's
+	// what a session comes from.
+	r.Post("/auth/login", appauth.Login(pool))
+
 	r.Group(func(r chi.Router) {
 		r.Use(appauth.Middleware(pool))
 		r.Get("/games/active", handlers.GetActiveGames(pool))
 		r.Get("/games/{gameId}/history", handlers.GetGameHistory(pool))
 		r.Post("/predictions", handlers.PostPrediction(pool))
+		r.Get("/predictions/me", handlers.GetMyPredictions(pool))
+
+		r.Post("/auth/logout", appauth.Logout(pool))
+		r.Get("/auth/me", appauth.Me(pool))
+		r.Get("/auth/sessions", appauth.ListSessions(pool))
+		r.Delete("/auth/sessions/{id}", appauth.RevokeSession(pool))
+		r.Delete("/auth/sessions", appauth.RevokeOtherSessions(pool))
+
+		r.Get("/users/{id}", handlers.GetUser(pool))
+
+		r.Get("/rates/meta", handlers.GetRateMeta(pool))
+		r.Get("/rates/me", handlers.GetMyRates(pool))
+
+		r.Get("/ledger", handlers.GetLedger(pool))
+
+		r.Post("/token-requests", handlers.CreateTokenRequest(pool))
+		r.Get("/token-requests/me", handlers.MyTokenRequests(pool))
+		r.Post("/token-requests/{id}/cancel", handlers.CancelTokenRequest(pool))
+		r.Get("/token-requests/{id}/image", handlers.GetTokenRequestImage(pool))
 	})
 
 	port := os.Getenv("PORT")
