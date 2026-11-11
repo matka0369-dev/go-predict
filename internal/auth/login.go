@@ -12,6 +12,7 @@ import (
 
 	"github.com/go-chi/chi/v5"
 	"github.com/jackc/pgx/v5"
+	"github.com/jackc/pgx/v5/pgconn"
 	"github.com/jackc/pgx/v5/pgxpool"
 	"golang.org/x/crypto/bcrypt"
 
@@ -132,25 +133,7 @@ func Login(pool *pgxpool.Pool) http.HandlerFunc {
 			return
 		}
 
-		rawToken, err := generateSessionToken()
-		if err != nil {
-			http.Error(w, "Failed to sign in", http.StatusInternalServerError)
-			return
-		}
-
-		var userAgent *string
-		if ua := r.Header.Get("User-Agent"); ua != "" {
-			userAgent = &ua
-		}
-		var ipAddress *string
-		if ip := r.RemoteAddr; ip != "" {
-			ipAddress = &ip
-		}
-
-		_, err = pool.Exec(r.Context(), `
-			INSERT INTO sessions (id, user_id, token_hash, ip_address, user_agent, expires_at)
-			VALUES ($1, $2, $3, $4, $5, $6)
-		`, db.NewUUID(), userID, hashToken(rawToken), ipAddress, userAgent, time.Now().Add(SessionTTL))
+		rawToken, err := insertSession(r, pool, userID)
 		if err != nil {
 			http.Error(w, "Failed to sign in", http.StatusInternalServerError)
 			return
@@ -162,15 +145,7 @@ func Login(pool *pgxpool.Pool) http.HandlerFunc {
 			return
 		}
 
-		http.SetCookie(w, &http.Cookie{
-			Name:     cookieNameFor(r),
-			Value:    rawToken,
-			Path:     "/",
-			HttpOnly: true,
-			Secure:   isProd(),
-			SameSite: http.SameSiteLaxMode,
-			MaxAge:   int(SessionTTL.Seconds()),
-		})
+		setSessionCookie(w, r, rawToken)
 
 		writeJSON(w, http.StatusOK, map[string]any{
 			"user": authenticatedUser{
@@ -179,6 +154,53 @@ func Login(pool *pgxpool.Pool) http.HandlerFunc {
 			},
 		})
 	}
+}
+
+// execer is the slice of pgxpool.Pool / pgx.Tx that writing a session needs,
+// so a sign-in that must commit atomically with something else (redeeming a
+// link) and one that doesn't (a password login) share one implementation.
+type execer interface {
+	Exec(ctx context.Context, sql string, args ...any) (pgconn.CommandTag, error)
+}
+
+// insertSession writes a fresh sessions row for userID and returns the raw
+// token. It does not touch the response: setSessionCookie does that, so a
+// caller inside a transaction can hold the cookie back until commit.
+func insertSession(r *http.Request, ex execer, userID string) (string, error) {
+	rawToken, err := generateSessionToken()
+	if err != nil {
+		return "", err
+	}
+
+	var userAgent *string
+	if ua := r.Header.Get("User-Agent"); ua != "" {
+		userAgent = &ua
+	}
+	var ipAddress *string
+	if ip := r.RemoteAddr; ip != "" {
+		ipAddress = &ip
+	}
+
+	_, err = ex.Exec(r.Context(), `
+		INSERT INTO sessions (id, user_id, token_hash, ip_address, user_agent, expires_at)
+		VALUES ($1, $2, $3, $4, $5, $6)
+	`, db.NewUUID(), userID, hashToken(rawToken), ipAddress, userAgent, time.Now().Add(SessionTTL))
+	if err != nil {
+		return "", err
+	}
+	return rawToken, nil
+}
+
+func setSessionCookie(w http.ResponseWriter, r *http.Request, rawToken string) {
+	http.SetCookie(w, &http.Cookie{
+		Name:     cookieNameFor(r),
+		Value:    rawToken,
+		Path:     "/",
+		HttpOnly: true,
+		Secure:   isProd(),
+		SameSite: http.SameSiteLaxMode,
+		MaxAge:   int(SessionTTL.Seconds()),
+	})
 }
 
 // Logout mirrors AuthController.logout — revoke the current session (if the

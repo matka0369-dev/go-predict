@@ -80,6 +80,11 @@ func main() {
 	// Unauthenticated — this is the one route that has to be, since it's
 	// what a session comes from.
 	r.Post("/auth/login", appauth.Login(pool))
+	// Link + PIN sign-in, and the invite lookup that feeds the Register button.
+	// All three are unauthenticated by nature — they're how a session starts.
+	r.Post("/auth/enter", appauth.Enter(pool))
+	r.Post("/auth/pin-login", appauth.PinLogin(pool))
+	r.Get("/join/{code}", handlers.GetJoin(pool))
 
 	r.Group(func(r chi.Router) {
 		r.Use(appauth.Middleware(pool))
