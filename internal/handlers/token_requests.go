@@ -1,6 +1,7 @@
 package handlers
 
 import (
+	"crypto/rand"
 	"encoding/base64"
 	"encoding/json"
 	"errors"
@@ -11,6 +12,7 @@ import (
 
 	"github.com/go-chi/chi/v5"
 	"github.com/jackc/pgx/v5"
+	"github.com/jackc/pgx/v5/pgconn"
 	"github.com/jackc/pgx/v5/pgxpool"
 
 	"predictsim/prediction-service/internal/auth"
@@ -39,6 +41,21 @@ func parseImageDataURL(value string) (mimeType string, data []byte, ok bool) {
 
 const maxGrant = 10_000_000
 
+// No 0/O/1/I/L: the code is read aloud and retyped from WhatsApp messages.
+const shortCodeAlphabet = "ABCDEFGHJKMNPQRSTUVWXYZ23456789"
+
+func newShortCode() string {
+	b := make([]byte, 8)
+	if _, err := rand.Read(b); err != nil {
+		panic(err)
+	}
+	out := make([]byte, 8)
+	for i, v := range b {
+		out[i] = shortCodeAlphabet[int(v)%len(shortCodeAlphabet)]
+	}
+	return string(out)
+}
+
 type createTokenRequestBody struct {
 	Kind   string  `json:"kind"`
 	Amount int     `json:"amount"`
@@ -59,6 +76,7 @@ type tokenRequestActorRef struct {
 
 type tokenRequestResponse struct {
 	ID             string                `json:"id"`
+	ShortCode      *string               `json:"shortCode"`
 	Kind           string                `json:"kind"`
 	Status         string                `json:"status"`
 	Amount         int                   `json:"amount"`
@@ -91,8 +109,8 @@ func CreateTokenRequest(pool *pgxpool.Pool) http.HandlerFunc {
 			http.Error(w, "Invalid request body", http.StatusBadRequest)
 			return
 		}
-		if body.Kind != "TOP_UP" && body.Kind != "SURRENDER" {
-			http.Error(w, "kind must be TOP_UP or SURRENDER", http.StatusBadRequest)
+		if body.Kind != "TOP_UP" && body.Kind != "SURRENDER" && body.Kind != "RETURN" {
+			http.Error(w, "kind must be TOP_UP, RETURN or SURRENDER", http.StatusBadRequest)
 			return
 		}
 		if body.Amount < 1 || body.Amount > maxGrant {
@@ -129,7 +147,7 @@ func CreateTokenRequest(pool *pgxpool.Pool) http.HandlerFunc {
 			return
 		}
 
-		if body.Kind == "SURRENDER" {
+		if body.Kind == "SURRENDER" || body.Kind == "RETURN" {
 			held := balance + winningsBalance
 			if body.Amount > held {
 				http.Error(w, "You only hold "+strconv.Itoa(held)+" tokens", http.StatusBadRequest)
@@ -150,11 +168,21 @@ func CreateTokenRequest(pool *pgxpool.Pool) http.HandlerFunc {
 			return
 		}
 
+		// The short code travels in the player's WhatsApp message so the agent
+		// can paste it and land on this exact row. A clash on the unique index
+		// is vanishingly rare; retry rather than fail the player.
 		id := db.NewUUID()
-		_, err = pool.Exec(r.Context(), `
-			INSERT INTO token_requests (id, requester_id, kind, amount, note, image_data, image_mime_type, updated_at)
-			VALUES ($1, $2, $3::token_request_kind, $4, $5, $6, $7, now())
-		`, id, user.ID, body.Kind, body.Amount, body.Note, imageData, imageMimeType)
+		for attempt := 0; ; attempt++ {
+			_, err = pool.Exec(r.Context(), `
+				INSERT INTO token_requests (id, short_code, requester_id, kind, amount, note, image_data, image_mime_type, updated_at)
+				VALUES ($1, $2, $3, $4::token_request_kind, $5, $6, $7, $8, now())
+			`, id, newShortCode(), user.ID, body.Kind, body.Amount, body.Note, imageData, imageMimeType)
+			var pgErr *pgconn.PgError
+			if err != nil && errors.As(err, &pgErr) && pgErr.Code == "23505" && attempt < 4 {
+				continue
+			}
+			break
+		}
 		if err != nil {
 			http.Error(w, "Failed to create request", http.StatusInternalServerError)
 			return
@@ -277,7 +305,7 @@ func GetTokenRequestImage(pool *pgxpool.Pool) http.HandlerFunc {
 }
 
 const tokenRequestSelectSQL = `
-	SELECT tr.id, tr.kind, tr.status, tr.amount, tr.note, tr.image_mime_type,
+	SELECT tr.id, tr.short_code, tr.kind, tr.status, tr.amount, tr.note, tr.image_mime_type,
 	       tr.claimed_at, tr.resolved_at, tr.resolution_note, tr.created_at, tr.ledger_entry_id,
 	       req.id, req.username, req.agent_id,
 	       cb.id, cb.username,
@@ -301,7 +329,7 @@ func scanTokenRequest(row rowScanner) (tokenRequestResponse, error) {
 		resolvedByID, resolvedByUsername *string
 	)
 	err := row.Scan(
-		&res.ID, &res.Kind, &res.Status, &res.Amount, &res.Note, &res.ImageMimeType,
+		&res.ID, &res.ShortCode, &res.Kind, &res.Status, &res.Amount, &res.Note, &res.ImageMimeType,
 		&claimedAt, &resolvedAt, &res.ResolutionNote, &createdAt, &res.LedgerEntryID,
 		&res.Requester.ID, &res.Requester.Username, &res.Requester.AgentID,
 		&claimedByID, &claimedByUsername,

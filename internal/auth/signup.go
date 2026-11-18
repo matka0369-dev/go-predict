@@ -303,6 +303,16 @@ func Signup(pool *pgxpool.Pool) http.HandlerFunc {
 			return
 		}
 
+		// Filed under the Agent whose app this was, with the player as the actor
+		// (nobody on staff did this).
+		if _, err := tx.Exec(r.Context(), `
+			INSERT INTO audit_logs (id, owner_id, actor_id, actor_type, action, target_user_id, meta)
+			VALUES ($1, $2, $3, 'PLAYER', 'player.signup', $3, $4::jsonb)
+		`, db.NewUUID(), agentID, userID, fmt.Sprintf(`{"username":%q}`, username)); err != nil {
+			http.Error(w, "server_error", http.StatusInternalServerError)
+			return
+		}
+
 		deviceID := db.NewUUID()
 		if _, err := tx.Exec(r.Context(), `
 			INSERT INTO player_devices (id, user_id, key_hash, pin_hash, last_used_at)

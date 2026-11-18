@@ -54,7 +54,7 @@ type rateEntry struct {
 	UpdatedAt  string `json:"updatedAt"`
 }
 
-// GetMyRates mirrors RatesService.myCards's PLAYER branch only — this
+// GetMyRates mirrors RatesService.myCards's PLAYER branch only (the Agent's GIVING card — no per-Player rates) — this
 // service's only caller is the Player portal, so the ADMIN/AGENT branches
 // (still Node-only) don't need a Go port. A Player with no agent (shouldn't
 // happen once a request reaches here, since a native Player always has one,
@@ -68,16 +68,6 @@ func GetMyRates(pool *pgxpool.Pool) http.HandlerFunc {
 		}
 		if user.AgentID == nil {
 			writeJSON(w, http.StatusOK, map[string]any{"kind": "PLAYER", "playing": []rateEntry{}})
-			return
-		}
-
-		own, err := rateCard(r, pool, user.ID, "PLAYING")
-		if err != nil {
-			http.Error(w, "Failed to load rates", http.StatusInternalServerError)
-			return
-		}
-		if len(own) > 0 {
-			writeJSON(w, http.StatusOK, map[string]any{"kind": "PLAYER", "playing": own})
 			return
 		}
 

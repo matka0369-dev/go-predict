@@ -1,8 +1,8 @@
 // Package rates resolves what a Player is actually paid for a given bet
-// type family — mirrors core-service's RatesService.myCards PLAYER branch
-// exactly (see services/core-service/src/rates/rates.service.ts): a
-// PLAYING override if the Player's Agent priced them differently at
-// creation, else the Agent's current GIVING card, read live.
+// type family — mirrors core-service's RatesService.myCards PLAYER branch:
+// the Agent's current GIVING card, read live. Every Player of an Agent plays
+// at that one card; per-Player rates were removed (2026-11-18) so an Agent's
+// consolidated bet totals stay comparable.
 package rates
 
 import (
@@ -18,20 +18,10 @@ var ErrNoRate = errors.New("no rate configured for this bet type")
 // EffectiveMultiplier is the odds a Player would be given right now for
 // betType, frozen into a Prediction at placement time so a later rate
 // change never reprices a bet already placed.
-func EffectiveMultiplier(ctx context.Context, pool *pgxpool.Pool, playerID, agentID, betType string) (int, error) {
+func EffectiveMultiplier(ctx context.Context, pool *pgxpool.Pool, _ /*playerID: rates no longer vary per player*/, agentID, betType string) (int, error) {
 	var multiplier int
 
 	err := pool.QueryRow(ctx, `
-		SELECT multiplier FROM rates WHERE owner_id = $1 AND kind = 'PLAYING' AND bet_type = $2
-	`, playerID, betType).Scan(&multiplier)
-	if err == nil {
-		return multiplier, nil
-	}
-	if !errors.Is(err, pgx.ErrNoRows) {
-		return 0, err
-	}
-
-	err = pool.QueryRow(ctx, `
 		SELECT multiplier FROM rates WHERE owner_id = $1 AND kind = 'GIVING' AND bet_type = $2
 	`, agentID, betType).Scan(&multiplier)
 	if errors.Is(err, pgx.ErrNoRows) {
