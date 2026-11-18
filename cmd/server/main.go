@@ -84,6 +84,7 @@ func main() {
 	// All three are unauthenticated by nature — they're how a session starts.
 	r.Post("/auth/enter", appauth.Enter(pool))
 	r.Post("/auth/pin-login", appauth.PinLogin(pool))
+	r.Post("/auth/signup", appauth.Signup(pool))
 	r.Get("/join/{code}", handlers.GetJoin(pool))
 
 	r.Group(func(r chi.Router) {
