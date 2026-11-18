@@ -10,8 +10,8 @@ import (
 )
 
 // GetJoin is public: it tells the player app which WhatsApp number an
-// Agent's invite code points at, so the Register button can open a chat with
-// the right person. The only things it returns are the Agent's display name
+// Agent's invite code points at (its "support" contact), so the sign-up screen's
+// help button can open a chat with the right person. The only things it returns are the Agent's display name
 // and the number the Agent chose to publish for this purpose.
 //
 // An unknown code, an inactive Agent and an Agent with no number all look the
@@ -26,12 +26,12 @@ func GetJoin(pool *pgxpool.Pool) http.HandlerFunc {
 
 		var name, number string
 		err := pool.QueryRow(r.Context(), `
-			SELECT username, whatsapp_number
-			FROM users
-			WHERE invite_code = $1
-			  AND account_type = 'AGENT'
-			  AND is_active
-			  AND whatsapp_number IS NOT NULL
+			SELECT u.username, c.whatsapp_number
+			FROM users u
+			JOIN agent_contacts c ON c.agent_id = u.id AND c.purpose = 'support'
+			WHERE u.invite_code = $1
+			  AND u.account_type = 'AGENT'
+			  AND u.is_active
 		`, code).Scan(&name, &number)
 		if errors.Is(err, pgx.ErrNoRows) {
 			http.Error(w, "not_found", http.StatusNotFound)

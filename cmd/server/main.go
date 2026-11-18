@@ -101,6 +101,7 @@ func main() {
 		r.Delete("/auth/sessions", appauth.RevokeOtherSessions(pool))
 
 		r.Get("/users/{id}", handlers.GetUser(pool))
+		r.Get("/contacts/me", handlers.GetMyContacts(pool))
 
 		r.Get("/rates/meta", handlers.GetRateMeta(pool))
 		r.Get("/rates/me", handlers.GetMyRates(pool))
