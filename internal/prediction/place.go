@@ -40,6 +40,7 @@ var (
 	ErrGameDisabled        = errors.New("this game is not enabled for your account")
 	ErrRoundCancelled      = errors.New("today's round has been cancelled")
 	ErrPastCutoff          = errors.New("the betting window for this has closed")
+	ErrNotYetOpen          = errors.New("close numbers open once the game opens")
 	ErrStakeOutOfRange     = errors.New("stake is outside this game's allowed range")
 	ErrInsufficientBalance = errors.New("insufficient balance")
 	ErrNoAgent             = errors.New("account has no agent")
@@ -115,8 +116,8 @@ func Place(ctx context.Context, pool *pgxpool.Pool, player auth.User, req PlaceR
 	if settledPana != nil {
 		return nil, ErrAlreadySettled
 	}
-	if time.Now().UTC().After(cutoff) {
-		return nil, ErrPastCutoff
+	if err := checkWindow(req.TypeID, time.Now().UTC(), round.OpensAt, round.ClosesAt); err != nil {
+		return nil, err
 	}
 
 	family, _ := req.TypeID.OddsFamily()
@@ -299,4 +300,25 @@ func translatePredictionInsertError(err error) error {
 		}
 	}
 	return err
+}
+
+// checkWindow is the betting-window rule, in one place:
+//   - Open-side numbers (Single, Jodi, Pana, Sangams) may be bet at any time
+//     up to one minute before the game opens.
+//   - Close-side numbers only exist once the game has opened: they are refused
+//     before opens_at and accepted from then until one minute before closes_at.
+func checkWindow(t Type, now, opensAt, closesAt time.Time) error {
+	if t.CutoffGroup() == "close" {
+		if now.Before(opensAt) {
+			return ErrNotYetOpen
+		}
+		if now.After(closesAt.Add(-time.Minute)) {
+			return ErrPastCutoff
+		}
+		return nil
+	}
+	if now.After(opensAt.Add(-time.Minute)) {
+		return ErrPastCutoff
+	}
+	return nil
 }

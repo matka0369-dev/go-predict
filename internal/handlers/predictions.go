@@ -161,6 +161,7 @@ func writeError(w http.ResponseWriter, err error) {
 		errors.Is(err, prediction.ErrGameNotActive),
 		errors.Is(err, prediction.ErrRoundCancelled),
 		errors.Is(err, prediction.ErrPastCutoff),
+		errors.Is(err, prediction.ErrNotYetOpen),
 		errors.Is(err, prediction.ErrAlreadySettled),
 		errors.Is(err, prediction.ErrInsufficientBalance):
 		status = http.StatusForbidden
